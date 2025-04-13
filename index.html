@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>9StarMax報價單</title>
+<title>商品銷售報價單</title>
 <style>
 :root{--primary:#1e3a8a;--secondary:#4b5e7a;--accent:#3b82f6;--bg-light:#f8fafc;--bg-highlight:#f1f5f9;--text:#111827;--text-light:#6b7280;--border:#e5e7eb;--success:#15803d;--danger:#e53e3e}
 *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,sans-serif}
@@ -248,12 +248,31 @@ table tbody tr:last-child td:last-child{border-bottom-right-radius:5px}
   
   .input-field {
     background-color: transparent !important;
-    border: 1px solid #e5e7eb !important;
+    border: none !important;
     min-height: 14px !important;
     font-size: 11px !important;
     padding: 1px 4px !important;
     display: block !important;
     width: 100% !important;
+    box-shadow: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+  }
+  
+  .input-field:focus {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+  
+  .input-field::-webkit-inner-spin-button,
+  .input-field::-webkit-outer-spin-button {
+    -webkit-appearance: none !important;
+    margin: 0 !important;
+  }
+  
+  .input-field[type="number"] {
+    -moz-appearance: textfield !important;
   }
   
   .bank-totals-section {
@@ -721,11 +740,139 @@ function setupButtonHandlers() {
   const printPdfBtn = d('printPdfBtn');
 
   previewBtn.addEventListener('click', () => {
+    console.log("[Main Window] Preview button clicked.");
     const previewWindow = window.open('', '_blank');
-    const previewDoc = previewWindow.document;
-    previewDoc.write(document.documentElement.outerHTML);
-    previewDoc.querySelector('.button-section').style.display = 'none';
-    previewDoc.close();
+    if (!previewWindow) {
+      N('無法打開預覽窗口，請檢查瀏覽器是否阻止了彈出窗口。', 'error');
+      console.error("[Main Window] Failed to open preview window.");
+      return;
+    }
+    console.log("[Main Window] Preview window opened.");
+    
+    // 確保計算是最新的
+    f();
+    
+    // 獲取原始文檔的標題和樣式
+    const originalTitle = document.title;
+    const styles = document.querySelector('style')?.textContent || '';
+    const quoteNumber = d('quoteNumber')?.textContent || originalTitle;
+    
+    // 構建預覽HTML
+    const previewHtml = `
+      <!DOCTYPE html>
+      <html lang="zh-TW">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>${quoteNumber}</title>
+        <style>
+          ${styles}
+          /* 預覽模式專用樣式 */
+          .preview-mode * {
+            pointer-events: none !important;
+            user-select: none !important;
+          }
+          .preview-mode input,
+          .preview-mode [contenteditable="true"],
+          .preview-mode .editable-field {
+            background: transparent !important;
+            border: none !important;
+            cursor: default !important;
+          }
+          .preview-mode .input-field {
+            background: transparent !important;
+            border: none !important;
+            cursor: default !important;
+            padding: 4px 6px !important;
+            display: block !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+          }
+          .preview-mode .button-section {
+            display: none !important;
+          }
+          .preview-mode #notes-textarea {
+            display: none !important;
+          }
+          .preview-mode #notes-print-preview {
+            display: block !important;
+          }
+          .preview-mode .items-controls {
+            display: none !important;
+          }
+          .preview-mode .section-title-with-controls {
+            display: block !important;
+            margin-bottom: 5px !important;
+            padding-bottom: 5px !important;
+            border-bottom: 1px solid var(--border) !important;
+          }
+        </style>
+      </head>
+      <body class="preview-mode">
+        ${document.querySelector('.container')?.outerHTML || ''}
+      </body>
+      </html>
+    `;
+    
+    // 寫入預覽HTML
+    previewWindow.document.write(previewHtml);
+    previewWindow.document.close();
+    
+    // 等待預覽窗口加載完成
+    previewWindow.onload = () => {
+      console.log("[Preview Window] onload event fired.");
+      try {
+        const pd = previewWindow.document;
+        if (!pd) {
+          console.error("[Preview Window] Preview document not accessible after load.");
+          throw new Error('Preview document not accessible.');
+        }
+        
+        // 同步備註內容
+        const notesTextarea = d('notes-textarea');
+        const previewNotes = pd.querySelector('#notes-print-preview');
+        if (notesTextarea && previewNotes) {
+          previewNotes.textContent = notesTextarea.value;
+        }
+        
+        // 同步所有可編輯字段
+        document.querySelectorAll('[contenteditable="true"], .editable-field').forEach(el => {
+          const previewEl = pd.querySelector(`[data-id="${el.dataset.id}"]`);
+          if (previewEl) {
+            previewEl.textContent = el.textContent;
+          }
+        });
+        
+        // 同步表格數據
+        const rows = document.querySelectorAll('#itemsTableBody tr');
+        const previewRows = pd.querySelectorAll('#itemsTableBody tr');
+        rows.forEach((row, index) => {
+          if (index < previewRows.length) {
+            const inputs = row.querySelectorAll('input');
+            const previewInputs = previewRows[index].querySelectorAll('input');
+            inputs.forEach((input, inputIndex) => {
+              if (inputIndex < previewInputs.length) {
+                previewInputs[inputIndex].value = input.value;
+              }
+            });
+          }
+        });
+        
+        // 禁用所有輸入和編輯功能
+        pd.querySelectorAll('input, [contenteditable="true"], .editable-field').forEach(el => {
+          el.setAttribute('readonly', 'readonly');
+          el.setAttribute('disabled', 'disabled');
+          el.removeAttribute('contenteditable');
+          el.style.pointerEvents = 'none';
+          el.style.userSelect = 'none';
+        });
+        
+        console.log("[Preview Window] Preview content synchronized successfully.");
+      } catch (error) {
+        console.error('[Preview Window] Error during preview setup:', error);
+        previewWindow.alert('生成預覽時發生錯誤: ' + error.message);
+      }
+    };
   });
 
   generateImageBtn.addEventListener('click', () => {
